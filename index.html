@@ -3,93 +3,263 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ระบบบันทึกพิกัดเสาไฟฟ้า</title>
+    <title>บันทึกพิกัดตำแหน่งเสาไฟฟ้า (Real-time)</title>
+    <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- SheetJS (XLSX) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
-        body { font-family: sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; }
-        #capture-area { display: flex; flex-direction: column; flex-grow: 1; }
-        #map { flex-grow: 1; min-height: 400px; }
-        #controls { padding: 10px; display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; background: #eee; }
-        #log { height: 150px; overflow-y: auto; background: white; padding: 10px; border-top: 2px solid #ccc; font-size: 12px; }
-        button { padding: 10px; border: none; border-radius: 4px; cursor: pointer; color: white; font-weight: bold; }
-        .btn-save { background: #27ae60; }
-        .btn-track { background: #2980b9; }
-        .btn-excel { background: #d35400; }
-        .btn-image { background: #8e44ad; }
-        .marker-label { background: rgba(255,255,255,0.8); border: 1px solid #333; padding: 2px; font-size: 10px; font-weight: bold; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+        header {
+            background-color: #007bff;
+            color: white;
+            padding: 15px;
+            text-align: center;
+            font-size: 1.25rem;
+            font-weight: bold;
+        }
+        #map {
+            height: 50vh;
+            width: 100%;
+        }
+        .container {
+            padding: 15px;
+            max-width: 800px;
+            margin: auto;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin: 15px 0;
+        }
+        button {
+            flex: 1;
+            padding: 12px;
+            font-size: 1rem;
+            font-weight: bold;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            color: white;
+            transition: background 0.3s;
+        }
+        #btn-save {
+            background-color: #28a745;
+        }
+        #btn-save:hover {
+            background-color: #218838;
+        }
+        #btn-export {
+            background-color: #17a2b8;
+        }
+        #btn-export:hover {
+            background-color: #138496;
+        }
+        .status-box {
+            background: white;
+            padding: 10px 15px;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 15px;
+            font-size: 0.95rem;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 5px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        th, td {
+            padding: 10px;
+            text-align: center;
+            border-bottom: 1px solid #ddd;
+            font-size: 0.9rem;
+        }
+        th {
+            background-color: #007bff;
+            color: white;
+        }
+        tr:hover {
+            background-color: #f1f1f1;
+        }
     </style>
 </head>
 <body>
 
-    <div id="capture-area">
-        <div id="map"></div>
-        <div id="log">
-            <strong>ตารางสรุปพิกัด:</strong>
-            <ul id="logList"></ul>
+    <header>ระบบบันทึกพิกัดเสาไฟฟ้า Real-time</header>
+
+    <div id="map"></div>
+
+    <div class="container">
+        <div class="status-box" id="status">กำลังค้นหาตำแหน่งปัจจุบันของคุณ...</div>
+
+        <div class="controls">
+            <button id="btn-save" onclick="savePoleLocation()">📍 บันทึกตำแหน่งเสาไฟฟ้า</button>
+            <button id="btn-export" onclick="exportToExcel()">📊 ส่งออกเป็น Excel</button>
+        </div>
+
+        <h3>รายการเสาไฟฟ้าที่บันทึกแล้ว (<span id="count">0</span> ต้น)</h3>
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ลำดับ</th>
+                        <th>ละติจูด (Latitude)</th>
+                        <th>ลองจิจูด (Longitude)</th>
+                        <th>เวลาที่บันทึก</th>
+                    </tr>
+                </thead>
+                <tbody id="pole-table-body">
+                    <tr>
+                        <td colspan="4" style="color: #888;">ยังไม่มีข้อมูลการบันทึก</td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
     </div>
 
-    <div id="controls">
-        <button class="btn-save" onclick="saveCurrentLocation()">📍 บันทึกเสาไฟ</button>
-        <button class="btn-track" onclick="toggleTracking()">🛰️ Tracking</button>
-        <button class="btn-excel" onclick="exportToExcel()">📊 Excel</button>
-        <button class="btn-image" onclick="exportMapImage()">📷 รูปภาพ</button>
-    </div>
-
+    <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        const map = L.map('map').setView([13.7367, 100.5231], 15);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+        let map;
+        let marker;
+        let currentLat = null;
+        let currentLng = null;
+        let poleList = [];
 
-        let savedPoints = [];
-        let isTracking = false;
-        let watchId = null;
+        // ตั้งค่าแผนที่เริ่มต้น
+        function initMap() {
+            map = L.map('map').setView([13.7563, 100.5018], 15); // ค่าเริ่มต้นกรุงเทพฯ
 
-        function saveCurrentLocation() {
-            navigator.geolocation.getCurrentPosition(pos => {
-                const lat = pos.coords.latitude;
-                const lng = pos.coords.longitude;
-                const time = new Date().toLocaleTimeString();
-                
-                // ปักหมุดพร้อม Label พิกัด
-                const marker = L.marker([lat, lng]).addTo(map);
-                marker.bindTooltip(`Lat:${lat.toFixed(5)}, Lng:${lng.toFixed(5)}`, {
-                    permanent: true, direction: 'top', className: 'marker-label'
-                }).openTooltip();
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
 
-                savedPoints.push({"ลำดับ": savedPoints.length + 1, "Lat": lat.toFixed(6), "Lng": lng.toFixed(6), "เวลา": time});
-                document.getElementById('logList').innerHTML += `<li>ต้นที่ ${savedPoints.length}: ${lat.toFixed(5)}, ${lng.toFixed(5)} (${time})</li>`;
-            }, null, { enableHighAccuracy: true });
-        }
+            // เริ่มติดตามตำแหน่งแบบ Real-time (watchPosition)
+            if (navigator.geolocation) {
+                navigator.geolocation.watchPosition(
+                    (position) => {
+                        currentLat = position.coords.latitude;
+                        currentLng = position.coords.longitude;
+                        const accuracy = position.coords.accuracy;
 
-        function toggleTracking() {
-            if(!isTracking) {
-                isTracking = true;
-                watchId = navigator.geolocation.watchPosition(pos => {
-                    map.setView([pos.coords.latitude, pos.coords.longitude], 17);
-                }, null, { enableHighAccuracy: true });
+                        document.getElementById('status').innerHTML = 
+                            `📍 <b>ตำแหน่งปัจจุบัน:</b> ${currentLat.toFixed(6)}, ${currentLng.toFixed(6)} (ความแม่นยำ: ±${Math.round(accuracy)} เมตร)`;
+
+                        const latLng = [currentLat, currentLng];
+
+                        if (!marker) {
+                            marker = L.marker(latLng).addTo(map)
+                                .bindPopup('ตำแหน่งปัจจุบันของคุณ').openPopup();
+                            map.setView(latLng, 17);
+                        } else {
+                            marker.setLatLng(latLng);
+                        }
+                    },
+                    (error) => {
+                        document.getElementById('status').innerHTML = 
+                            `<span style="color:red;">⚠️ ไม่สามารถดึงตำแหน่ง GPS ได้: ${error.message}</span>`;
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        maximumAge: 0,
+                        timeout: 5000
+                    }
+                );
             } else {
-                isTracking = false;
-                navigator.geolocation.clearWatch(watchId);
+                alert("เบราว์เซอร์ของคุณไม่รองรับการระบุตำแหน่ง Geolocation");
             }
         }
 
-        function exportToExcel() {
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(savedPoints), "Data");
-            XLSX.writeFile(wb, "pole-report.xlsx");
+        // ฟังก์ชันบันทึกตำแหน่งเสาไฟฟ้า
+        function savePoleLocation() {
+            if (currentLat === null || currentLng === null) {
+                alert("ยังไม่ได้รับสัญญาณ GPS กรุณารอสักครู่...");
+                return;
+            }
+
+            const now = new Date();
+            const timeString = now.toLocaleDateString('th-TH') + ' ' + now.toLocaleTimeString('th-TH');
+
+            const poleData = {
+                id: poleList.length + 1,
+                lat: currentLat,
+                lng: currentLng,
+                time: timeString
+            };
+
+            poleList.push(poleData);
+            updateTable();
+
+            // ปักหมุดถาวรสีแดงสำหรับเสาที่บันทึกแล้ว
+            L.circleMarker([currentLat, currentLng], {
+                radius: 8,
+                fillColor: "#ff7800",
+                color: "#000",
+                weight: 1,
+                opacity: 1,
+                fillOpacity: 0.8
+            }).addTo(map).bindPopup(`เสาไฟฟ้าที่ #${poleData.id}`);
         }
 
-        function exportMapImage() {
-            html2canvas(document.getElementById('capture-area'), {useCORS: true}).then(canvas => {
-                const link = document.createElement('a');
-                link.download = 'pole-summary.png';
-                link.href = canvas.toDataURL("image/png");
-                link.click();
+        // อัปเดตข้อมูลในตาราง HTML
+        function updateTable() {
+            const tbody = document.getElementById('pole-table-body');
+            document.getElementById('count').innerText = poleList.length;
+
+            if (poleList.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" style="color: #888;">ยังไม่มีข้อมูลการบันทึก</td></tr>`;
+                return;
+            }
+
+            let html = '';
+            poleList.forEach(pole => {
+                html += `
+                    <tr>
+                        <td>${pole.id}</td>
+                        <td>${pole.lat.toFixed(6)}</td>
+                        <td>${pole.lng.toFixed(6)}</td>
+                        <td>${pole.time}</td>
+                    </tr>
+                `;
             });
+            tbody.innerHTML = html;
         }
+
+        // ฟังก์ชันส่งออกเป็น Excel
+        function exportToExcel() {
+            if (poleList.length === 0) {
+                alert("ไม่มีข้อมูลสำหรับส่งออกเป็น Excel");
+                return;
+            }
+
+            // แปลงข้อมูลให้อยู่ในรูป Format ของ SheetJS
+            const dataToExport = poleList.map(pole => ({
+                "ลำดับ": pole.id,
+                "ละติจูด (Latitude)": pole.lat,
+                "ลองจิจูด (Longitude)": pole.lng,
+                "เวลาที่บันทึก": pole.time
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "พิกัดเสาไฟฟ้า");
+
+            // บันทึกไฟล์ Excel
+            XLSX.writeFile(workbook, "Electric_Poles_Location.xlsx");
+        }
+
+        // โหลดแผนที่เมื่อเปิดหน้าเว็บ
+        window.onload = initMap;
     </script>
 </body>
 </html>

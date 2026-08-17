@@ -6,8 +6,10 @@
     <title>ระบบบันทึกพิกัดเสาไฟฟ้า Real-time</title>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <!-- Leaflet Image Plugin สำหรับเซฟรูปแผนที่ -->
-    <script src="https://unpkg.com/leaflet-image@0.4.0/leaflet-image.js"></script>
+    <!-- SheetJS (xlsx) สำหรับ Export Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- dom-to-image สำหรับ Export รูปภาพแผนที่ -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
     <style>
         body { font-family: 'Sarabun', sans-serif; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; }
         #header { background: #2c3e50; color: white; padding: 15px; text-align: center; }
@@ -17,7 +19,8 @@
         .btn-save { background: #27ae60; }
         .btn-track { background: #2980b9; }
         .btn-track.active { background: #c0392b; }
-        .btn-export { background: #8e44ad; }
+        .btn-excel { background: #d35400; }
+        .btn-image { background: #8e44ad; }
         button:hover { opacity: 0.9; }
         #log { max-height: 120px; overflow-y: auto; background: white; padding: 10px; width: 100%; font-size: 14px; border-top: 1px solid #ddd; }
     </style>
@@ -28,12 +31,16 @@
         <h2>⚡ ระบบบันทึกพิกัดเสาไฟฟ้า Real-time</h2>
     </div>
 
-    <div id="map"></div>
+    <!-- ส่วนแสดงแผนที่ -->
+    <div id="map-container" style="flex-grow: 1; display: flex; flex-direction: column; position: relative;">
+        <div id="map" style="width: 100%; height: 100%;"></div>
+    </div>
 
     <div id="controls">
-        <button class="btn-save" onclick="saveCurrentLocation()">📍 บันทึกพิกัดเสาไฟปัจจุบัน</button>
-        <button id="trackBtn" class="btn-track" onclick="toggleTracking()">🛰️ เปิด/ปิด Real-time Tracking</button>
-        <button class="btn-export" onclick="exportMapImage()">📷 สรุปผลเป็นรูปภาพ</button>
+        <button class="btn-save" onclick="saveCurrentLocation()">📍 บันทึกพิกัดเสาไฟ</button>
+        <button id="trackBtn" class="btn-track" onclick="toggleTracking()">🛰️ เปิด/ปิด Tracking</button>
+        <button class="btn-excel" onclick="exportToExcel()">📊 สรุป Excel</button>
+        <button class="btn-image" onclick="exportMapImage()">📷 สรุปรูปภาพแผนที่</button>
     </div>
 
     <div id="log"><strong>ประวัติการบันทึก:</strong><ul id="logList" style="margin: 0; padding-left: 20px;"></ul></div>
@@ -41,10 +48,9 @@
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // ตั้งค่าเริ่มต้นแผนที่ (แสดงประเทศไทยหรือพิกัดเริ่มต้น)
+        // ตั้งค่าเริ่มต้นแผนที่
         const map = L.map('map').setView([13.736717, 100.523186], 15);
 
-        // โหลดแผนที่จาก OpenStreetMap
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
             attribution: '© OpenStreetMap contributors'
@@ -53,10 +59,10 @@
         let currentMarker = null;
         let watchId = null;
         let isTracking = false;
-        let savedPoints = [];
+        let savedPoints = []; 
         let pathLine = L.polyline([], {color: 'blue', weight: 4}).addTo(map);
 
-        // ดึงพิกัดปัจจุบันแบบครั้งเดียว (เมื่อกดปุ่มบันทึก)
+        // บันทึกพิกัดปัจจุบัน
         function saveCurrentLocation() {
             if (!navigator.geolocation) {
                 alert("เบราว์เซอร์ของคุณไม่รองรับ Geolocation");
@@ -66,30 +72,39 @@
             navigator.geolocation.getCurrentPosition(position => {
                 const lat = position.coords.latitude;
                 const lng = position.coords.longitude;
-                addPoleMarker(lat, lng, "เสาไฟฟ้า (บันทึกด้วยมือ)");
+                const poleNumber = savedPoints.length + 1;
+                const label = `เสาไฟฟ้าต้นที่ ${poleNumber}`;
+                const timeString = new Date().toLocaleString('th-TH');
+
+                addPoleMarker(lat, lng, label, timeString);
             }, error => {
                 alert("ไม่สามารถดึงตำแหน่งได้: " + error.message);
             }, { enableHighAccuracy: true });
         }
 
         // เพิ่มหมุดเสาไฟฟ้าลงบนแผนที่
-        function addPoleMarker(lat, lng, label) {
+        function addPoleMarker(lat, lng, label, timeString) {
             const marker = L.marker([lat, lng]).addTo(map)
                 .bindPopup(`<b>${label}</b><br>ละติจูด: ${lat.toFixed(6)}<br>ลองจิจูด: ${lng.toFixed(6)}`)
                 .openPopup();
 
-            savedPoints.push({lat, lng});
+            savedPoints.push({
+                "ลำดับ": savedPoints.length + 1,
+                "รายการ": label,
+                "ละติจูด (Latitude)": lat,
+                "ลองจิจูด (Longitude)": lng,
+                "เวลาที่บันทึก": timeString
+            });
             
-            // เพิ่มรายการลงใน Log ด้านล่าง
             const logList = document.getElementById('logList');
             const li = document.createElement('li');
-            li.textContent = `${label} - Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`;
+            li.textContent = `${label} - Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)} (${timeString})`;
             logList.appendChild(li);
 
             map.setView([lat, lng], 17);
         }
 
-        // เปิด-ปิดโหมดติดตามแบบ Real-time ขณะเคลื่อนที่
+        // เปิด-ปิด Real-time Tracking
         function toggleTracking() {
             const btn = document.getElementById('trackBtn');
             if (!isTracking) {
@@ -98,14 +113,13 @@
                     return;
                 }
                 isTracking = true;
-                btn.textContent = "⏹️ ปิด Real-time Tracking";
+                btn.textContent = "⏹️ ปิด Tracking";
                 btn.classList.add('active');
 
                 watchId = navigator.geolocation.watchPosition(position => {
                     const lat = position.coords.latitude;
                     const lng = position.coords.longitude;
 
-                    // อัปเดตตำแหน่งปัจจุบันบนแผนที่
                     if (!currentMarker) {
                         currentMarker = L.marker([lat, lng], {
                             icon: L.icon({
@@ -117,7 +131,6 @@
                         currentMarker.setLatLng([lat, lng]);
                     }
 
-                    // ลากเส้นทางการเคลื่อนที่
                     pathLine.addLatLng([lat, lng]);
                     map.panTo([lat, lng]);
 
@@ -127,7 +140,7 @@
 
             } else {
                 isTracking = false;
-                btn.textContent = "🛰️ เปิด/ปิด Real-time Tracking";
+                btn.textContent = "🛰️ เปิด/ปิด Tracking";
                 btn.classList.remove('active');
                 if (watchId !== null) {
                     navigator.geolocation.clearWatch(watchId);
@@ -136,21 +149,34 @@
             }
         }
 
-        // ฟังก์ชันสรุปผลและบันทึกแผนที่ออกเป็นรูปภาพ
+        // ฟังก์ชัน Export ข้อมูลเป็น Excel
+        function exportToExcel() {
+            if (savedPoints.length === 0) {
+                alert("ยังไม่มีข้อมูลพิกัดเสาไฟฟ้า กรุณากดบันทึกพิกัดอย่างน้อย 1 จุด");
+                return;
+            }
+            const worksheet = XLSX.utils.json_to_sheet(savedPoints);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "พิกัดเสาไฟฟ้า");
+            XLSX.writeFile(workbook, "pole-mapping-report.xlsx");
+        }
+
+        // ฟังก์ชัน Export แผนที่ออกเป็นรูปภาพ (PNG)
         function exportMapImage() {
-            leafletImage(map, function(err, canvas) {
-                if (err) {
-                    alert("เกิดข้อผิดพลาดในการสร้างรูปภาพ");
-                    return;
-                }
-                
-                // สร้างลิงก์ดาวน์โหลดรูปภาพ
-                const image = canvas.toDataURL("image/png");
-                const link = document.createElement('a');
-                link.href = image;
-                link.download = 'pole-mapping-summary.png';
-                link.click();
-            });
+            const mapElement = document.getElementById('map');
+            
+            // ใช้ dom-to-image จับภาพเฉพาะส่วนแผนที่ที่ปักหมุดไว้
+            domtoimage.toPng(mapElement)
+                .then(function (dataUrl) {
+                    const link = document.createElement('a');
+                    link.download = 'pole-map-summary.png';
+                    link.href = dataUrl;
+                    link.click();
+                })
+                .catch(function (error) {
+                    console.error('เกิดข้อผิดพลาดในการสร้างรูปภาพ:', error);
+                    alert("ไม่สามารถสร้างรูปภาพได้");
+                });
         }
     </script>
 </body>
